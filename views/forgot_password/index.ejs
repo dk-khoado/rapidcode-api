@@ -1,0 +1,25 @@
+<center>
+    <form method="POST" action="/api/account/updateNewPassword" onsubmit="return checkPass()">
+        <input hidden name="private_key" value="<%= key %>" />
+        <input id="newpass" type="password" placeholder="New password" required />
+        <br />
+        <br />
+        <input id="c_newpass" name="newpassword" type="password" placeholder="Confirm New password" required/>
+        <br />
+        <br />
+        <input type="submit" />
+    </form>
+</center>
+<script>
+    function checkPass(){
+        var newPass = document.getElementById("newpass");
+        var c_newpass = document.getElementById("c_newpass");
+
+        if (newPass.value == c_newpass.value) {            
+            return true
+        }
+        alert("mật khẩu nhập lại không trùng")
+        return false;
+    }
+
+</script>
