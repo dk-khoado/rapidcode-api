@@ -1,6 +1,5 @@
 var mongoose = require('mongoose');
 var chatModel = require('../models/chat_model');
-
 mongoose.Promise = global.Promise;
 
 var userModel = require('./users_model');

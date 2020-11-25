@@ -27,7 +27,7 @@ module.exports = class {
     }
 
     BaseURL(){
-        return `https://ezcode.ddns.net`;
+        return `https://api.9586team.xyz`;
     }
 
     getAllEndPoint(){

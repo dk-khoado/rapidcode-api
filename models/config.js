@@ -1,6 +1,6 @@
 module.exports = {
     db: {
-        host: '26.68.1.86',
+        host: 'mongodb.ddns.net',
         port: '27017',
         username: 'ezcode',
         password: '123456',

@@ -12,7 +12,7 @@ const options = {
             title: "Xin Chào!. đây là các api đã tạo nhen tụi bây",
             version: "1.0.0",
             description:
-                "Địt mẹ vào xem cần thêm cái nào báo nhé tụi lờ",
+                "Vào xem cần thêm cái nào báo nhé tụi lờ",
             license: {
                 name: "MIT",
                 url: "https://choosealicense.com/licenses/mit/"
@@ -25,7 +25,7 @@ const options = {
         },
     },
     apis: [
-      '../docs/acccount.js'
+        '../docs/acccount.yaml',
     ]
 };
 
@@ -34,12 +34,12 @@ router.use("/docs", swaggerUi.serve);
 router.get(
     "/docs",
     swaggerUi.setup(specs, {
-        explorer: true
+        explorer: true,
     })
 );
 /* GET home page. */
-router.get('/', function(req, res, next) {
-  res.render('index', { title: 'Express' });
+router.get('/', function (req, res, next) {
+    res.render('index', { title: 'Express' });
 });
 
 module.exports = router;

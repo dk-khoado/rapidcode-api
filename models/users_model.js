@@ -1,156 +1,123 @@
 var mongoose = require('mongoose');
 mongoose.Promise = global.Promise;
+
 var bcrypt = require('bcrypt');
-var validator = require('validator').default;
 var jwt = require('jsonwebtoken');
 var createPrivateKey = require('../function/createPrivateKey');
-var createCodeActive = require('../function/createCodeActive');
-var base64 = require('js-base64').Base64;
-
 const temp = require('../models/tempForgotPassword');
+var userSchema = require('./schema/user_model')
 
-const Schema = mongoose.Schema;
+const CryptoHelper = require('../helpers/CryptoHelper')
 
-var userSchema = new Schema({
-    username: {
-        type: String,
-        unique: true,
-        required: true,
-        validate: /^[A-Za-z0-9_]+$/,
-        min: 4
-    },
-    fullName: {
-        type: String,
-        default: "Coder",
-        min: 1
-    },
-    password: {
-        type: String,
-        required: true
-    },
-    dateCreate: { type: Date, default: Date.now },
-    googleID: { type: Number },
-    email: {
-        type: String,
-        unique: true,
-        required: true,
-        validate: v => {
-            if (!validator.default.isEmail(v)) {
-                throw Error("Invalid Email address");
-            }
-        }
-    },
-    image: { type: String, default: null },
-    private_key: {
-        type: String,
-        index: true,
-        unique: true,
-        default: () => {
-            return createPrivateKey(Date.now());
-        }
-    },
-    active: {
-        type: Boolean,
-        default: false
-    },
-    activeCode: {
-        type: String,
-        default: () => {
-            return createCodeActive();
-        }
-    },
-    isForgot: {
-        type: Boolean,
-        default: false,
-    },
-    isdelete: {
-        type: Boolean,
-        default: false,
-    },
-    birthday: {
-        type: Date,
-        default: null
-    },
-    gender: {
-        type: String,
-        default: null
-    }
-});
-userSchema.pre('save', async function (next) {
+userSchema.pre('save', async function(next) {
     var user = this;
+    try {
+        if (user.newpassword) {
+            //change password
+            user.password = user.newpassword;
+            user.newpassword = undefined;
+            if (!user.isModified('password')) { return next() };
 
-    if (user.newpassword) {
-        //change password
-        user.password = user.newpassword;
-        user.newpassword = undefined;
-        if (!user.isModified('password')) { return next() };
-        await bcrypt.hash(user.password, 10).then((hashedPassword) => {
-            user.password = hashedPassword;
+            var result = CryptoHelper.hash(user.password)
+            user.password = result.hashed_password;
             user.private_key = createPrivateKey(Date.now());
+            user.salt = result.salt
             next();
-        })
-    } else {
-        //register
-        let username = await User.findOne({ username: this.username });
-        let email = await User.findOne({ email: this.email });
-        if (username != null) {
-            throw { message: 'Username already exist' };
-        }
-        if (email != null) {
-            throw { message: 'Email already exist' };
-        }
-        if (!user.isModified('password')) { return next() };
-        await bcrypt.hash(user.password, 10).then((hashedPassword) => {
-            user.password = hashedPassword;
-            user.fullName = "Coder " + user.username;
+        } else {
+            //register
+            let username = await User.findOne({ username: this.username });
+            let email = await User.findOne({ email: this.email });
+            if (username != null) {
+                throw { message: 'Username already exist' };
+            }
+            if (email != null) {
+                throw { message: 'Email already exist' };
+            }
+            if (!user.isModified('password')) { return next() };
+
+            var result = CryptoHelper.hash(user.password)
+            user.password = result.hashed_password;
+            user.private_key = createPrivateKey(Date.now());
+            user.salt = result.salt
+            user.fullName = user.username;
             next();
-        })
+        }
+    } catch (error) {
+        console.error(error)
     }
 })
 
-userSchema.methods.generateAuthToken = async function () {
+userSchema.methods.generateAuthToken = async function() {
     // Generate an auth token for the user    
     var user = this;
     // console.log('[private key]', user.private_key);
 
     const token = jwt.sign({ _id: user._id, }, user.private_key);
-    user.save()
     return token;
 }
 
-userSchema.statics.findByCredentials = async (username, email, password) => {
-    // Search for a user by email and password.
-    const user = await User.findOne(
-        {
+userSchema.statics.findByCredentials = async(username, email, password) => {
+    try {
+        // Search for a user by email and password.
+        const user = await User.findOne({
             $or: [{ email: email }, { username: username }],
             active: true,
         });
-    if (!user) {
-        return null
+        if (!user) {
+            return null
+        }
+        if (user.isdelete) {
+            throw "The account has been disabled";
+        }
+        if (user.salt) {
+            var result = CryptoHelper.check(password, user.salt, user.password)
+            if (result) {
+                return user
+            }
+            return null
+        }
+        //sẽ bị bỏ sau khi release
+        const isPasswordMatch = await bcrypt.compare(password, user.password);
+        if (!isPasswordMatch) {
+            return null
+        }
+        var resultHash = CryptoHelper.hash(password)
+        user.password = resultHash.hashed_password;
+        user.salt = resultHash.salt;
+        await user.save()
+        return user
+    } catch (error) {
+        return null;
     }
-    if (user.isdelete) {
-        throw "The account has been disabled";
-    }
-    const isPasswordMatch = await bcrypt.compare(password, user.password);
-    if (!isPasswordMatch) {
-        return null
-    }
-    return user
+
 }
 
-userSchema.statics.comparePassword = async (id, password) => {
-    const user = await User.findOne({ _id: id });
-    if (!user) {
-        return false;
+userSchema.statics.comparePassword = async(id, password) => {
+    try {
+        const user = await User.findOne({ _id: id });
+        if (!user) {
+            return false;
+        }
+        if (user.salt) {
+            var result = CryptoHelper.check(password, user.salt, user.password)
+            if (result) {
+                return user
+            }
+            return null
+        }
+        //sẽ bị bỏ sau khi release
+        let isPasswordMatch = await bcrypt.compare(password, user.password);
+        if (!isPasswordMatch) {
+            return false;
+        }
+        return true;
+    } catch (error) {
+        return false
     }
-    let isPasswordMatch = await bcrypt.compare(password, user.password);
-    if (!isPasswordMatch) {
-        return false;
-    }
-    return true;
+
 }
 
-userSchema.statics.forgotPassword = async (email) => {
+userSchema.statics.forgotPassword = async(email) => {
 
 
     var isExist = await User.exists({ email: email })
@@ -162,7 +129,7 @@ userSchema.statics.forgotPassword = async (email) => {
     return null;
 }
 
-userSchema.statics.activeAccount = async (email, code) => {
+userSchema.statics.activeAccount = async(email, code) => {
     var user = await User.findOneAndUpdate({ email: email, activeCode: code, active: false }, { active: true });
     if (user) {
         return true;
@@ -170,24 +137,17 @@ userSchema.statics.activeAccount = async (email, code) => {
     return false;
 }
 
-userSchema.statics.findAccount = async (name) => {
+userSchema.statics.findAccount = async(name) => {
     if (name) {
-        return await User.find(
-            { active: true, isdelete: false, username: { $regex: new RegExp(name, "i") } },
-            { username: 1, email: 1, image: 1, fullName: 1 }
-        );      
+        return await User.find({ active: true, isdelete: false, username: { $regex: new RegExp(name, "i") } }, { username: 1, email: 1, image: 1, fullName: 1 });
     }
-    return await User.find(
-        { active: true, isdelete: false },
-        { username: 1, email: 1, image: 1, fullName: 1 }
-    );
+    return await User.find({ active: true, isdelete: false }, { username: 1, email: 1, image: 1, fullName: 1 });
 
 }
 
-userSchema.statics.updateProfile = async (id, mUsername, mFullName, mBirthday, mGender) => {
+userSchema.statics.updateProfile = async(id, mUsername, mFullName, mBirthday, mGender) => {
 
     var Info = {};
-
 
     if (mUsername && mUsername.length >= 4) {
         let username = await User.findOne({ username: mUsername });

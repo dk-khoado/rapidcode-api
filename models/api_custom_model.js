@@ -1,14 +1,13 @@
 var mongoose = require('mongoose');
+mongoose.Promise = global.Promise;
 var createTable = require('../helpers/createTabe');
-var apiCustom = require('../models/data_table_users');
+var Api_data = require('../models/data_table_users');
 var userModel = require('../models/users_model');
 var tokenModel = require('../models/tokens');
-var validate = require("validator").default;
-var types = require('../configs/listDataType');
+var projectModel = require('./project');
+var types = require('../constants/listDataType');
 var gen_key_api = require('../function/privateKeyHelper');
 var response = require('../function/response');
-
-mongoose.Promise = global.Promise;
 
 const Schema = mongoose.Schema;
 
@@ -17,6 +16,11 @@ const apiCustomSchema = new Schema({
         type: Schema.Types.ObjectId,
         required: true,
         ref: "User"
+    },
+    project_id: {
+        type: Schema.Types.ObjectId,
+        default: null,
+        ref: "project"
     },
     url: {
         type: String,
@@ -57,7 +61,19 @@ const apiCustomSchema = new Schema({
 apiCustomSchema.pre('save', async function (next) {
 
     var apis = this;
-    var result = await APIs.find({ table_name: apis.table_name, user_id: apis.user_id }).count();
+    var result = 0
+    if (apis.project_id) {
+        var projectExist = await projectModel.exists({ _id: apis.project_id, isdelete: false })
+        if (!projectExist) {
+            throw { message: `project not found!` }
+        }
+        result = await APIs.find({
+            "table_name": apis.table_name, "user_id": apis.user_id, "project_id": apis.project_id
+        }).countDocuments();
+    } else {
+        result = await APIs.find({ table_name: apis.table_name, user_id: apis.user_id }).countDocuments();
+    }
+
     if (result > 0) {
         throw { message: "table đã tồn tại" }
     } else {
@@ -80,8 +96,8 @@ apiCustomSchema.pre('save', async function (next) {
 
             var passType = false;
             for (let index = 0; index < types.data.length; index++) {
-                const type = types.data[index];
-                if (element.dataType == type) {
+                const typeData = types.data[index];
+                if (element.dataType == typeData) {
                     passType = true;
                     break;
                 }
@@ -145,8 +161,9 @@ apiCustomSchema.statics.SELECT_TABLE = async (id, username, tableName, token, is
             }
             return null;
         }
+        var tokens = await tokenModel.findOneAndUpdate({ token: token, }, { $inc: { numberOfUsed: 1 } });
         if (doc.isProtect == true) {
-            var tokens = await tokenModel.findOneAndUpdate({ token: token, }, { $inc: { numberOfUsed: 1 } });
+            // var tokens = await tokenModel.findOneAndUpdate({ token: token, }, { $inc: { numberOfUsed: 1 } });
             if (tokens || doc.private_token == token) {
                 if (tokens.limitUses && tokens.numberOfUsed > tokens.numberOfUses) {
                     throw { msg: "This token has used too much" }
@@ -159,6 +176,7 @@ apiCustomSchema.statics.SELECT_TABLE = async (id, username, tableName, token, is
         if (doc.user_id.username == username) {
             return { name: doc.table_name, fields: doc.table_fields };
         }
+        return null;
     } else {
         return null;
     }
@@ -178,7 +196,7 @@ apiCustomSchema.statics.DELETE_APIs = async (user_id, table_name) => {
     try {
         await session.withTransaction(async () => {
             await APIs.find({ user_id: user_id, table_name: table_name }).remove();
-            await apiCustom.find({ ownerID: user_id, table_name: table_name }).remove();
+            await Api_data.find({ ownerID: user_id, table_name: table_name }).remove();
 
         }, {
             readPreference: 'primary',
@@ -220,7 +238,7 @@ apiCustomSchema.statics.UPDATE_API_TABLE_NAME = async (user_id, old_table_name, 
     try {
         await session.withTransaction(async () => {
             let resul = await APIs.findOneAndUpdate({ user_id: user_id, table_name: old_table_name }, { table_name: new_table_name });
-            let resul1 = await apiCustom.findOneAndUpdate({ ownerID: user_id, table_name: old_table_name }, { table_name: new_table_name });
+            let resul1 = await Api_data.findOneAndUpdate({ ownerID: user_id, table_name: old_table_name }, { table_name: new_table_name });
             if (!resul || !resul1) {
                 throw "lỗi"
             }
@@ -265,7 +283,7 @@ apiCustomSchema.statics.UPDATE_FIELD = async (user_id, table_name, field_id, nam
 
         var infoField = data.info.find(obj => obj._id == field_id);
 
-        var dataSelect = await apiCustom.SELECT(user_id, apiInfo.table_name, -1);
+        var dataSelect = await Api_data.SELECT(user_id, apiInfo.table_name, -1);
 
         //Kiểm tra dataType
         if (infoField.dataType == type_field) {
@@ -333,8 +351,7 @@ apiCustomSchema.statics.INSERT_FIELDS = async (user_id, table_name, tableFields)
             }
         }
 
-        var insert = await APIs.findOneAndUpdate({ user_id: user_id, table_name: table_name },
-            { "table_fields": result.table_fields }, { runValidators: true });
+        var insert = await APIs.findOneAndUpdate({ user_id: user_id, table_name: table_name }, { "table_fields": result.table_fields }, { runValidators: true });
         if (insert) {
             return { success: true, message: "Insert field success !!!" }
         }
@@ -347,7 +364,7 @@ apiCustomSchema.statics.DELETE_FIELD = async (user_id, table_name, field_id) => 
     var result = await APIs.findOne({ user_id: user_id, table_name: table_name });
     console.log(result)
     var infoField = result.table_fields.find(obj => obj._id == field_id);
-    var dataSelect = await apiCustom.SELECT(user_id, result.table_name, -1);
+    var dataSelect = await Api_data.SELECT(user_id, result.table_name, -1);
 
     if (result) {
         if (dataSelect.length == 0) {
@@ -428,11 +445,9 @@ apiCustomSchema.statics.UPDATE_API = async (req, res) => {
     try {
         await session.withTransaction(async () => {
             let body = req.body;
-            var result = await APIs.findOneAndUpdate({ user_id: req.user._id, _id: body.table_id },
-                { isProtect: body.isProtect, isPrivate: body.isPrivate, table_name: body.new_table_name }, { runValidators: true });
+            var result = await APIs.findOneAndUpdate({ user_id: req.user._id, _id: body.table_id }, { isProtect: body.isProtect, isPrivate: body.isPrivate, table_name: body.new_table_name }, { runValidators: true });
 
-            let resul_data = await apiCustom.findOneAndUpdate({ ownerID: req.user._id, table_id: result._id },
-                { table_name: body.new_table_name }, { runValidators: true });
+            let resul_data = await Api_data.findOneAndUpdate({ ownerID: req.user._id, table_id: result._id }, { table_name: body.new_table_name }, { runValidators: true });
             if (result != null && resul_data != null) {
                 res.status(200).send(response("", true, 200, result, "Update success !!!"));
             } else {
@@ -451,5 +466,7 @@ apiCustomSchema.statics.UPDATE_API = async (req, res) => {
         res.status(200).send(response("AC401", false, 200, {}, "Can not update api !!!"));
     }
 }
-const APIs = mongoose.model('API', apiCustomSchema, "APIs");
-module.exports = APIs;
+
+var APIs = mongoose.model('API', apiCustomSchema, "APIs")
+
+module.exports = APIs

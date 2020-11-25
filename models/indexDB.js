@@ -10,6 +10,7 @@ mongoose.set("useFindAndModify", false);
 // mongoose.connect('mongodb://localhost/test');
 // mongoose.connect('mongodb://luanangame:Khoa!123@den1.mongo1.gear.host:27001/luanangame');
 mongoose.connect(`mongodb://${config.db.username}:${config.db.password}@${config.db.host}:${config.db.port}/${config.db.db_name}`);
+// mongoose.connect(`mongodb+srv://${config.db.username}:${config.db.password}@${config.db.host}/${config.db.db_name}?retryWrites=true&w=majority`);
   
 var db = mongoose.connection;
 

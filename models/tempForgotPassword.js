@@ -34,14 +34,7 @@ var tempForgotPassword = new Schema({
 })
 
 tempForgotPassword.statics.insertTemp = async (email) => {
-    var key = randomKey(50);
-    var isExist = await temp.exists({ key: key });
-    if (isExist) {
-        do {
-            key = randomKey(50);
-            isExist = await temp.exists({ key: key });
-        } while (isExist);
-    }
+    var key = randomKey(6);    
     var code = randomCode();
     try {
         var expired = new Date();

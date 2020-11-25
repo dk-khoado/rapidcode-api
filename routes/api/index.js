@@ -7,9 +7,11 @@ var friends = require('./friends');
 var post = require('./post');
 var upload = require('./upload');
 var question = require('./post_user');
+var restful = require('./restful/index');
 
 router.use('/account', users);
 router.use('/v1', apis);
+router.use('/restful', restful);
 router.use('/messenger', messenger);
 router.use('/friend', friends);
 router.use('/upload', upload);

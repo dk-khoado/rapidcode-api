@@ -33,7 +33,7 @@ const auth = async (req, res, next) => {
 
         let result = await User.findOne({ username: req.params.username });
         if (!result) {
-            throw "users không tồn tại";
+            throw "user không tồn tại";
         }
 
         let isSuccess = await apiCustom.SELECT_TABLE(result._id, req.params.username, req.params.table_name, token);
